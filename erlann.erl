@@ -2,15 +2,13 @@
 %
 %	Erlann, multiprocess based artificial neural network in erlang.
 %	
-%	newTestNet(N) - Create a new test network with N neurons, 
-%		returns list of pids
-%	%%(not done) newPercNet(N) - Create a new perceptron network with N neurons, 
-%		returns list of pids
+%	newPercNet(N) - Create a new perceptron network with N neurons, 
+%		returns list of pids where first is output
 %
 %	new(N) - Create a new network with N neurons, returns list of pids
 %	connect(OutPid, InPid) - Connect neuron with OutPid to neuron with InPid
 %	stop(ListOfPids) - Stop neurons with pids in ListOfPids.
-%	setBias(Pid, Bias) - Set bias for neron with Pid
+%	setBias(Pid, Bias) - Set bias for neuron with Pid
 %	setWeight(Pid, Weight) - Set Weight for neuron with Pid
 %
 %	get(List, N) - Get item N in List (should be in another module)
@@ -18,68 +16,101 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(erlann).
--export([newTestNet/1, newPercNet/1, neuron/3, new/1, stop/1, setWeight/2, setBias/2, get/2]).
+-export([newPercNet/1, neuron/1, new/1, stop/1, setWeight/2, setBias/2, get/2]).
 
-newTestNet([]) ->
+newPercNet(_, []) ->
 	[];
-newTestNet([H|T]) ->
-	
-	setBias(H, 2),
-	setWeight(H, 2),
-	
-	case T of	
+newPercNet(First, [_|T]) ->
+	case T of 
 		[] ->
-			newTestNet(T);
+			newPercNet(First, T);
 		T ->
 			[HT|_] = T,
-			connect(H, HT),
-			newTestNet(T)
-	end;		
-newTestNet(N) ->
-	Neurons = new(N),
-	newTestNet(Neurons),
-	Neurons.	
+			
+			setBias(HT, 0),
+			setWeight(HT, 2),
 	
-newPercNet({_N, [H|_T]}) ->
-	setBias(H, 2); 
+			connect(HT, First),
+			newPercNet(First, T)
+	end.
 newPercNet(N) ->
 	Neurons = new(N),
-	newPercNet(Neurons),
+	[First|_] = Neurons,
+	
+	setFunction(First, fun(Signal, Bias) -> heavySide(Signal, Bias) end),
+	
+	newPercNet(First, Neurons),
 	Neurons.
-		
-neuron([], Weight, Bias) ->
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+heavySide(Signal, Bias) ->
+	if Signal + Bias > 0 ->
+		1;
+	true ->
+		0
+	end.
+
+charge(Signal, Weight, Bias, Function) ->
+	receive 
+		{signal, More} ->
+			charge(Signal + More, Weight, Bias, Function);
+		_Other ->
+			charge(Signal, Weight, Bias, Function)
+	after 
+		100 ->
+			Weight*Function(Signal, Bias)
+	end.
+	
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%	
+	
+neuron({Weight, Bias, Function}) ->
 	receive 
 		stop ->
 			io:fwrite("~p stopped\n", [self()]);
-		{setWeight, NewBias} ->
-			io:fwrite("Bias for ~p set to ~p\n", [self(), NewBias]),
-			neuron([], Weight, NewBias);
-		{setBias, NewWeight} ->
-			io:fwrite("Weight for ~p set to ~p\n", [self(), NewWeight]),
-			neuron([], NewWeight, Bias);
 		{connect, OutPid} ->
-			io:fwrite("Connected ~p to ~p\n", [OutPid,self()]),
-			neuron([OutPid], Weight, Bias);
-		Signal ->
-			io:fwrite("Output: ~p\n", [Signal]),
-			neuron([], Weight, Bias)
+			io:fwrite("Connected ~p to ~p\n", [self(), OutPid]),
+			neuron({[OutPid], Weight, Bias, Function});
+		{setWeight, NewWeight} ->
+			io:fwrite("Weight for ~p set to ~p\n", [self(), NewWeight]),
+			neuron({NewWeight, Bias, Function});
+		{setBias, NewBias} ->
+			io:fwrite("Bias for ~p set to ~p\n", [self(), NewBias]),
+			neuron({Weight, NewBias, Function});
+		{setFunction, NewFunction} ->
+			io:fwrite("Function for ~p set to ~p\n", [self(), NewFunction]),
+			neuron({Weight, Bias, NewFunction});
+		{signal, Signal} ->
+			OutPut = charge(Signal, Weight, Bias, Function),
+			io:fwrite("Output: ~p\n", [OutPut]),
+			neuron({Weight, Bias, Function});
+		Other ->
+			io:fwrite("~p is not a valid neuronal input", [Other]),
+			neuron({Weight, Bias, Function})
 	end;
-neuron([OutPid], Weight, Bias) ->
+neuron({[OutPid], Weight, Bias, Function}) ->
 	receive 
 		stop ->
 			io:fwrite("~p stopped!\n", [self()]);
-		{setWeight, NewBias} ->
-			io:fwrite("Bias for ~p set to ~p\n", [self(), NewBias]),
-			neuron([OutPid], Weight, NewBias);
-		{setBias, NewWeight} ->
-			io:fwrite("Weight for ~p set to ~p\n", [self(), NewWeight]),
-			neuron([OutPid], NewWeight, Bias);
 		{connect, _} ->
 			io:fwrite("Neuron is already connected\n"),
-			neuron([OutPid], Weight, Bias);
-		Signal ->
-			OutPid ! (Signal*Weight+Bias),
-			neuron([OutPid], Weight, Bias)
+			neuron({[OutPid], Weight, Bias, Function});
+		{setWeight, NewWeight} ->
+			io:fwrite("Weight for ~p set to ~p\n", [self(), NewWeight]),
+			neuron({[OutPid], NewWeight, Bias, Function});
+		{setBias, NewBias} ->
+			io:fwrite("Bias for ~p set to ~p\n", [self(), NewBias]),
+			neuron({[OutPid], Weight, NewBias, Function});
+		{setFunction, NewFunction} ->
+			io:fwrite("Function for ~p set to ~p\n", [self(), NewFunction]),
+			neuron({[OutPid], Weight, Bias, NewFunction});
+		{signal, Signal} ->
+			OutPut = charge(Signal, Weight, Bias, Function),
+			OutPid ! {signal, OutPut},
+			neuron({[OutPid], Weight, Bias, Function});
+		Other ->
+			io:fwrite("~p is not a valid neuronal input", [Other]),
+			neuron({[OutPid], Weight, Bias, Function})
 	end.
 	
 new({N, PidsIn}) ->
@@ -87,7 +118,8 @@ new({N, PidsIn}) ->
 		N > 0 ->
 			%Length = length(PidsIn),
 			%[H|_] = PidsIn,
-			PidsOut = lists:append([spawn_link(erlann, neuron, [[], 0, 0])], PidsIn),
+			PidsOut = lists:append([spawn_link(erlann, neuron, [{1, 0, 
+				fun(Signal, _) -> Signal end}])], PidsIn),
 			new({N-1, PidsOut});
 		true ->
 			PidsIn
@@ -96,28 +128,35 @@ new(N) ->
 	if 
 		N > 0 ->
 			PidsIn = [],
-			PidsOut = lists:append([spawn_link(erlann, neuron, [[], 0, 0])], PidsIn),
+			PidsOut = lists:append([spawn_link(erlann, neuron, [{1, 0,
+				fun(Signal, _) -> Signal end}])], PidsIn),
 			new({N-1, PidsOut});
 		true ->
 			io:fwrite("Not a valid number\n")
 	end.
 
-connect(OutPid, InPid) ->
-	OutPid ! {connect, InPid}.
-	
+
 stop([]) ->
 	io:fwrite("Network stopped\n");
 stop(Pids) ->
 	[H|T] = Pids,
 	H ! stop,
-	stop(T).
+	stop(T).	
+	
+connect(OutPid, InPid) ->
+	OutPid ! {connect, InPid}.
 	
 setWeight(Pid, Weight) ->
 	Pid ! {setWeight, Weight}.
 	
 setBias(Pid, Bias) ->
 	Pid ! {setBias, Bias}.
-		
+
+setFunction(Pid, Function) ->
+	Pid ! {setFunction, Function}.
+	
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	
 get([],_) ->
 	io:fwrite("Reached end of list\n");
 get(List,1) ->
