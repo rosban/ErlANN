@@ -16,7 +16,49 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(erlann).
--export([newPercNet/1, neuron/1, new/1, stop/1, setWeight/2, setBias/2, get/2]).
+-export([testPercNet/0, trainPercNet/1, newPercNet/1, neuron/1, new/1, stop/1, setWeight/2, setBias/2, get/2]).
+
+% -record(trainingset, {input, outcome})
+
+%trainPercNet([Hn|Tn], {[Hin], Outcomes}) ->
+%	connect(Hn, self()),
+%	trainPercNet({Neurons, #trainingset{inputs = Inputs, outcomes = Outcomes}}).
+testPercNet() ->
+	Neurons = newPercNet(11),
+	TrainingSet = [
+	{[0,2,3,2,5,3,0,0,4,2], 0},
+	{[1,2,3,4,5,6,7,8,9,10], 1}, 
+	{[1,0,3,4,1,6,7,8,9,10], 0},
+	{[1,0,3,4,1,6,3,8,9,1], 0},
+	{[2,3,4,5,6,7,8,9,10,11], 1}
+	],
+	trainPercNet({Neurons, TrainingSet}),
+	
+	[{X,_}|_] = TrainingSet,
+	[_|Tn] = Neurons,
+	spawn_link(fun() -> signal(Tn, X) end),
+	receive {signal, Y} -> 
+		io:fwrite("Y: ~p\n", [Y])
+	end.
+
+trainPercNet({Neurons, []}) ->
+	Neurons;
+trainPercNet({Neurons, [Hd|Td]}) ->
+	[Hn|Tn] = Neurons,
+	connect(Hn, self()),
+	{X, _} = Hd,
+	spawn_link(fun() -> signal(Tn, X) end),
+	receive {signal, Y} -> 
+		setPercWeight(Tn, Hd, Y)
+	end,
+	io:fwrite("Y: ~p\n", [Y]),
+	trainPercNet({Neurons, Td}).
+
+setPercWeight([], {[], _}, _) ->
+	[];
+setPercWeight([Hn|Tn], {[X|Tx], D}, Y) ->
+	setWeight(Hn, fun(W) -> W + X*(D-Y) end),
+	setPercWeight(Tn, {Tx, D}, Y).
 
 newPercNet(_, []) ->
 	[];
@@ -28,7 +70,7 @@ newPercNet(First, [_|T]) ->
 			[HT|_] = T,
 			
 			setBias(HT, 0),
-			setWeight(HT, 2),
+			setWeight(HT, fun(_X) -> 0 end),
 	
 			connect(HT, First),
 			newPercNet(First, T)
@@ -68,12 +110,14 @@ neuron({Weight, Bias, Function}) ->
 	receive 
 		stop ->
 			io:fwrite("~p stopped\n", [self()]);
+		disconnect ->
+			io:fwrite("~p not connected\n", [self()]);
 		{connect, OutPid} ->
 			io:fwrite("Connected ~p to ~p\n", [self(), OutPid]),
 			neuron({[OutPid], Weight, Bias, Function});
 		{setWeight, NewWeight} ->
 			io:fwrite("Weight for ~p set to ~p\n", [self(), NewWeight]),
-			neuron({NewWeight, Bias, Function});
+			neuron({NewWeight(Weight), Bias, Function});
 		{setBias, NewBias} ->
 			io:fwrite("Bias for ~p set to ~p\n", [self(), NewBias]),
 			neuron({Weight, NewBias, Function});
@@ -92,12 +136,15 @@ neuron({[OutPid], Weight, Bias, Function}) ->
 	receive 
 		stop ->
 			io:fwrite("~p stopped!\n", [self()]);
+		disconnect ->
+			io:fwrite("Disconnected from ~p to ~p\n", [self(), OutPid]),
+			neuron({Weight, Bias, Function});
 		{connect, _} ->
 			io:fwrite("Neuron is already connected\n"),
 			neuron({[OutPid], Weight, Bias, Function});
 		{setWeight, NewWeight} ->
 			io:fwrite("Weight for ~p set to ~p\n", [self(), NewWeight]),
-			neuron({[OutPid], NewWeight, Bias, Function});
+			neuron({[OutPid], NewWeight(Weight), Bias, Function});
 		{setBias, NewBias} ->
 			io:fwrite("Bias for ~p set to ~p\n", [self(), NewBias]),
 			neuron({[OutPid], Weight, NewBias, Function});
@@ -146,14 +193,20 @@ stop(Pids) ->
 connect(OutPid, InPid) ->
 	OutPid ! {connect, InPid}.
 	
-setWeight(Pid, Weight) ->
-	Pid ! {setWeight, Weight}.
-	
+setWeight(Pid, WeightFunction) ->
+	Pid ! {setWeight, WeightFunction}.
+
 setBias(Pid, Bias) ->
 	Pid ! {setBias, Bias}.
-
+	
 setFunction(Pid, Function) ->
 	Pid ! {setFunction, Function}.
+
+signal([], []) ->
+	[];
+signal([Hp|Tp], [Hs|Ts]) ->
+	Hp ! {signal, Hs},
+	signal(Tp, Ts).
 	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 	
