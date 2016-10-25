@@ -16,13 +16,11 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(erlann).
--export([testPercNet/0, trainPercNet/1, newPercNet/1, neuron/1, new/1, stop/1, setWeight/2, setBias/2, get/2]).
+-export([testPercNet/0, trainPercNet/1, newPercNet/1, neuron/1, new/1, stop/1, 
+	setWeight/2, setBias/2, get/2, call/2, heavySide/2]).
 
-% -record(trainingset, {input, outcome})
+-record(neuron_st, {outpids, weight, bias, function, charge, counter}).
 
-%trainPercNet([Hn|Tn], {[Hin], Outcomes}) ->
-%	connect(Hn, self()),
-%	trainPercNet({Neurons, #trainingset{inputs = Inputs, outcomes = Outcomes}}).
 testPercNet() ->
 	Neurons = newPercNet(3),
 	TrainingSet = [
@@ -37,6 +35,36 @@ testPercNet() ->
 	{[1, 1], 1},
 	{[1, 0], 0},
 	{[0, 1], 0},
+	{[0, 1], 0},
+	{[0, 0], 0},
+	{[1, 0], 0},
+	{[1, 1], 1},
+	{[1, 0], 0},
+	{[0, 1], 0},
+	{[0, 1], 0},
+	{[0, 0], 0},
+	{[1, 0], 0},
+	{[1, 1], 1},
+	{[1, 0], 0},
+	{[0, 1], 0},
+	{[1, 0], 0},
+	{[0, 1], 0},
+	{[0, 0], 0},
+	{[1, 0], 0},
+	{[1, 1], 1},
+	{[1, 0], 0},
+	{[0, 1], 0},
+	{[0, 0], 0},
+	{[1, 1], 1},
+	{[1, 0], 0},
+	{[0, 1], 0},
+	{[0, 0], 0},
+	{[1, 0], 0},
+	{[1, 1], 1},
+	{[1, 0], 0},
+	{[0, 1], 0},
+	{[0, 1], 0},
+	{[0, 0], 0},
 	{[1, 1], 1},
 	{[1, 0], 0},
 	{[0, 1], 0},
@@ -46,26 +74,51 @@ testPercNet() ->
 	{[0, 1], 0},
 	{[1, 1], 1},
 	{[1, 0], 0},
+	{[0, 1], 0},
+	{[1, 1], 1},
+	{[1, 1], 1},
+	{[1, 0], 0},
+	{[0, 0], 0},
 	{[1, 1], 1},
 	{[1, 0], 0},
 	{[0, 1], 0},
+	{[1, 1], 1},
+	{[0, 1], 0},
+	{[0, 0], 0},
+	{[1, 1], 1},
+	{[1, 0], 0},
+	{[0, 1], 0},
+	{[0, 0], 0},
+	{[1, 0], 0},
+	{[1, 1], 1},
+	{[1, 0], 0},
+	{[0, 1], 0},
+	{[0, 1], 0},
+	{[0, 0], 0},
+	{[1, 1], 1},
+	{[1, 0], 0},
+	{[0, 1], 0},
+	{[0, 0], 0},
+	{[1, 1], 1},
+	{[1, 0], 0},
+	{[0, 1], 0},
+	{[1, 1], 1},
+	{[1, 0], 0},
+	{[0, 1], 0},
+	{[1, 1], 1},
+	{[1, 1], 1},
+	{[1, 0], 0},
 	{[0, 0], 0},
 	{[1, 1], 1},
 	{[1, 0], 0},
 	{[0, 1], 0},
 	{[1, 1], 1},
 	{[1, 0], 0}
-	%{[0,2,3,2,5,3,0,0,4,2], 0},
-	%{[1,2,3,4,5,6,7,8,9,10], 1}, 
-	%{[1,0,3,4,1,6,7,8,9,10], 0},
-	%{[1,0,3,4,1,6,3,8,9,1], 0},
-	%{[2,3,4,5,6,7,8,9,10,11], 1}
 	],
 	trainPercNet({Neurons, TrainingSet}),
 	
-	%[{X,_}|_] = TrainingSet,
 	[_|Tn] = Neurons,
-	spawn_link(fun() -> signal(Tn, [0,1]) end),
+	spawn_link(fun() -> signal(Tn, [1,1]) end),
 	receive {signal, Y} -> 
 		io:fwrite("Y: ~p\n", [Y])
 	end,
@@ -86,7 +139,8 @@ trainPercNet({Neurons, [Ht|Tt]}) ->
 setPercWeight([], {[], _}, _) ->
 	[];
 setPercWeight([Hn|Tn], {[X|Tx], D}, Y) ->
-	setWeight(Hn, fun(W) -> W + X*(D-Y) end),
+	setWeight(Hn, fun(W) -> 
+		W + ((D-Y) * math:exp((-1)*(D-Y)*X)/math:pow(1 + (math:exp((-1)*(D-Y)*X)),2)) end),
 	setPercWeight(Tn, {Tx, D}, Y).
 
 newPercNet(_, []) ->
@@ -108,8 +162,8 @@ newPercNet(N) ->
 	Neurons = new(N),
 	[First|_] = Neurons,
 	connect(First, self()),
-	setFunction(First, fun(Signal, Bias) -> heavySide(Signal, Bias) end),
-	call([First], {setN, N-1}),
+	setFunction(First, fun(Signal, Bias) -> fermiDist(Signal, Bias) end),
+	call([First], {setCounter, N-1}),
 	newPercNet(First, Neurons),
 	Neurons.
 
@@ -122,106 +176,118 @@ heavySide(Signal, Bias) ->
 		0
 	end.
 
-chargeDynamic(Signal, Weight, Bias, Function) ->
+fermiDist(Signal, Bias) ->
+	K = 100,
+	1/(1+math:exp((-1) * K * (Signal + Bias))).
+	
+charge(St = #neuron_st{charge = dynamic}, Signal) ->
 	receive 
 		{signal, More} ->
-			chargeDynamic(Signal + More, Weight, Bias, Function);
+			charge(St, Signal + More);
 		_ ->
-			chargeDynamic(Signal, Weight, Bias, Function)
+			charge(St, Signal)
 	after 
-		10 ->
-			Weight*Function(Signal, Bias)
-	end.
-
-chargeStatic(Signal, Weight, Bias, Function, 1) ->
-	Weight*Function(Signal, Bias);
-chargeStatic(Signal, Weight, Bias, Function, N) ->
-	%io:fwrite("~p\n", [N]),
+		10 -> 
+			Weight = St#neuron_st.weight,
+			Function = St#neuron_st.function,
+			Weight * Function(Signal, St#neuron_st.bias)
+	end;
+charge(St = #neuron_st{charge = static, counter = 1}, Signal) ->
+	Weight = St#neuron_st.weight,
+	Function = St#neuron_st.function,
+	Weight * Function(Signal, St#neuron_st.bias);
+charge(St = #neuron_st{charge = static}, Signal) ->
 	receive 
 		{signal, More} ->
-			chargeStatic(Signal + More, Weight, Bias, Function, N-1);
+			charge(St#neuron_st{counter = St#neuron_st.counter - 1}, Signal + More);
 		_ ->
-			chargeStatic(Signal, Weight, Bias, Function, N)
+			charge(St, Signal)
 	after 
 		100 ->
 			io:fwrite("Too few neurons for static charge\n"),
-			Weight*Function(Signal, Bias)
+			Weight = St#neuron_st.weight,
+			Function = St#neuron_st.function,
+			Weight * Function(Signal, St#neuron_st.bias)
 	end.	
 	
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%	
 	
-neuron({Weight, Bias, Function, N}) ->
+neuron(St = #neuron_st{outpids = []}) ->
 	receive 
 		stop ->
 			io:fwrite("~p stopped\n", [self()]);
 		disconnect ->
-			% io:fwrite("~p not connected\n", [self()]);
-			neuron({Weight, Bias, Function, N});
+			io:fwrite("~p not connected\n", [self()]),
+			neuron(St);
 		{connect, OutPid} ->
-			% io:fwrite("Connected ~p to ~p\n", [self(), OutPid]),
-			neuron({[OutPid], Weight, Bias, Function, N});
+			io:fwrite("Connected ~p to ~p\n", [self(), OutPid]),
+			neuron(St#neuron_st{outpids = [OutPid]});
 		{setWeight, NewWeight} ->
-			% io:fwrite("Weight for ~p set to ~p\n", [self(), NewWeight]),
-			neuron({NewWeight(Weight), Bias, Function, N});
+			io:fwrite("Weight for ~p set to ~p\n", [self(), NewWeight(St#neuron_st.weight)]),
+			neuron(St#neuron_st{weight = NewWeight(St#neuron_st.weight)});
 		{setBias, NewBias} ->
-			% io:fwrite("Bias for ~p set to ~p\n", [self(), NewBias]),
-			neuron({Weight, NewBias, Function, N});
+			io:fwrite("Bias for ~p set to ~p\n", [self(), NewBias]),
+			neuron(St#neuron_st{bias = NewBias});
 		{setFunction, NewFunction} ->
-			% io:fwrite("Function for ~p set to ~p\n", [self(), NewFunction]),
-			neuron({Weight, Bias, NewFunction, N});
-		{setN, NewN} ->
-			neuron({Weight, Bias, Function, NewN});
+			io:fwrite("Function for ~p set to ~p\n", [self(), NewFunction]),
+			neuron(St#neuron_st{function = NewFunction});
+		{setCounter, NewCounter} ->
+			neuron(St#neuron_st{counter = NewCounter});
 		{getWeight} ->
-			io:fwrite("Weight for ~p:	~p\n", [self(), Weight]),
-			neuron({Weight, Bias, Function, N});
+			io:fwrite("Weight for ~p:	~p\n", [self(), St#neuron_st.weight]),
+			neuron(St);
 		{signal, Signal} ->
-			_OutPut = chargeStatic(Signal, Weight, Bias, Function, N),
-			% io:fwrite("Output: ~p\n", [OutPut]),
-			neuron({Weight, Bias, Function, N});
-		_Other ->
-			% io:fwrite("~p is not a valid neuronal input", [Other]),
-			neuron({Weight, Bias, Function, N})
+			OutPut = charge(St, Signal),
+			io:fwrite("Output: ~p\n", [OutPut]),
+			neuron(St);
+		Other ->
+			io:fwrite("~p is not a valid neuronal input", [Other]),
+			neuron(St)
 	end;
-neuron({[OutPid], Weight, Bias, Function, N}) ->
+neuron(St = #neuron_st{outpids = [OutPid|To]}) when (To == []) ->
 	receive 
 		stop ->
 			io:fwrite("~p stopped!\n", [self()]);
 		disconnect ->
-			% io:fwrite("Disconnected from ~p to ~p\n", [self(), OutPid]),
-			neuron({Weight, Bias, Function, N});
+			io:fwrite("Disconnected from ~p to ~p\n", [self(), OutPid]),
+			neuron(St#neuron_st{outpids = []});
 		{connect, _} ->
-			% io:fwrite("Neuron is already connected\n"),
-			neuron({[OutPid], Weight, Bias, Function, N});
+			io:fwrite("Neuron is already connected\n"),
+			neuron(St);
 		{setWeight, NewWeight} ->
-			% io:fwrite("Weight for ~p set to ~p\n", [self(), NewWeight(Weight)]),
-			neuron({[OutPid], NewWeight(Weight), Bias, Function, N});
+			io:fwrite("Weight for ~p set to ~p\n", [self(), NewWeight(St#neuron_st.weight)]),
+			neuron(St#neuron_st{weight = NewWeight(St#neuron_st.weight)});
 		{setBias, NewBias} ->
-			% io:fwrite("Bias for ~p set to ~p\n", [self(), NewBias]),
-			neuron({[OutPid], Weight, NewBias, Function, N});
+			io:fwrite("Bias for ~p set to ~p\n", [self(), NewBias]),
+			neuron(St#neuron_st{bias = NewBias});
 		{setFunction, NewFunction} ->
-			% io:fwrite("Function for ~p set to ~p\n", [self(), NewFunction]),
-			neuron({[OutPid], Weight, Bias, NewFunction, N});
-		{setN, NewN} ->
-			neuron({[OutPid], Weight, Bias, Function, NewN});
+			io:fwrite("Function for ~p set to ~p\n", [self(), NewFunction]),
+			neuron(St#neuron_st{function = NewFunction});
+		{setCounter, NewCounter} ->
+			neuron(St#neuron_st{counter = NewCounter});
 		{getWeight} ->
-			io:fwrite("Weight for ~p:	~p\n", [self(), Weight]),
-			neuron({[OutPid], Weight, Bias, Function, N});
+			io:fwrite("Weight for ~p:	~p\n", [self(), St#neuron_st.weight]),
+			neuron(St);
 		{signal, Signal} ->
-			OutPut = chargeStatic(Signal, Weight, Bias, Function, N),
+			OutPut = charge(St, Signal),
 			OutPid ! {signal, OutPut},
-			neuron({[OutPid], Weight, Bias, Function, N});
-		_Other ->
-			% io:fwrite("~p is not a valid neuronal input", [Other]),
-			neuron({[OutPid], Weight, Bias, Function, N})
+			neuron(St);
+		Other ->
+			io:fwrite("~p is not a valid neuronal input", [Other]),
+			neuron(St)
 	end.
 	
 new({N, PidsIn}) ->
 	if 
 		N > 0 ->
-			%Length = length(PidsIn),
-			%[H|_] = PidsIn,
-			PidsOut = lists:append([spawn_link(erlann, neuron, [{1, 0, 
-				fun(Signal, _) -> Signal end, 1}])], PidsIn),
+			PidsOut = lists:append([spawn_link(erlann, neuron, [#neuron_st{
+				outpids = [], 
+				weight = 1,
+				bias = 0,
+				function = fun(Signal, _) -> Signal end,
+				charge = static,
+				counter = 1
+				}])], PidsIn),
 			new({N-1, PidsOut});
 		true ->
 			PidsIn
@@ -230,8 +296,14 @@ new(N) ->
 	if 
 		N > 0 ->
 			PidsIn = [],
-			PidsOut = lists:append([spawn_link(erlann, neuron, [{1, 0,
-				fun(Signal, _) -> Signal end, 1}])], PidsIn),
+			PidsOut = lists:append([spawn_link(erlann, neuron, [#neuron_st{
+				outpids = [], 
+				weight = 1,
+				bias = 0,
+				function = fun(Signal, _) -> Signal end,
+				charge = static,
+				counter = 1
+				}])], PidsIn),
 			new({N-1, PidsOut});
 		true ->
 			io:fwrite("Not a valid number\n")
