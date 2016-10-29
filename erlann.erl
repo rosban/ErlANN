@@ -4,7 +4,12 @@
 %	
 %	newPercNet(N) - Create a new perceptron network with N neurons, 
 %		returns list of pids where first is output
-%
+%	trainPercNet(TrainingSet, Neurons, WeightAlgorithm, BiasAlgorithm) - 
+%		TrainingSet - {[Input1,...InputN], Output}
+%		Neurons - List of pids to neurons
+%		WeightAlgorithm(W,D,U,X) - The function used for training weight
+%		BiasAlgorithm(B,D,U) - The function used for training bias
+%		
 %	new(N) - Create a new network with N neurons, returns list of pids
 %	connect(OutPid, InPid) - Connect neuron with OutPid to neuron with InPid
 %	stop(ListOfPids) - Stop neurons with pids in ListOfPids.
@@ -365,7 +370,7 @@ testPercNet() ->
 	{[1, 1], 1},
 	{[0, 0], 0}
 	],
-	trainPercNet({Neurons, TrainingSet}),
+	trainPercNet({TrainingSet, Neurons, linear, linear}),
 	
 	[Hn|Tn] = Neurons,
 	call(Tn, {getWeight}),
@@ -387,25 +392,40 @@ testPercNet() ->
 		io:fwrite("{0, 0}: ~p\n", [Y4])
 	end.
 	
-trainPercNet({Neurons, []}) ->
+trainPercNet({[], Neurons, _, _}) ->
 	Neurons;
-trainPercNet({Neurons, [Ht|Tt]}) ->
+trainPercNet({[Ht|Tt], Neurons, WeightAlgorithm, linear}) ->
 	[Hn|Tn] = Neurons,
 	{X, D} = Ht,
 	spawn_link(fun() -> signal(Tn, X) end),
 	receive {signal, Y} -> 
-		setPercWeight(Tn, Ht, Y),
+		setPercWeight(Tn, Ht, Y, WeightAlgorithm),
 		setBias(Hn, fun(B) -> 
 			B + ((D-Y) * 0.01) end)
 	end,
-	trainPercNet({Neurons, Tt}).
+	trainPercNet({Tt, Neurons, WeightAlgorithm, linear});
+trainPercNet({[Ht|Tt], Neurons, WeightAlgorithm, BiasAlgorithm}) ->
+	[Hn|Tn] = Neurons,
+	{X, D} = Ht,
+	spawn_link(fun() -> signal(Tn, X) end),
+	receive {signal, Y} -> 
+		setPercWeight(Tn, Ht, Y, WeightAlgorithm),
+		setBias(Hn, fun(B) -> 
+			BiasAlgorithm(B,D,Y) end)
+	end,
+	trainPercNet({Tt, Neurons, WeightAlgorithm, BiasAlgorithm}).
 
-setPercWeight([], {[], _}, _) ->
+	
+setPercWeight([], {[], _}, _, _) ->
 	[];
-setPercWeight([Hn|Tn], {[X|Tx], D}, Y) ->
+setPercWeight([Hn|Tn], {[X|Tx], D}, Y, linear) ->
 	setWeight(Hn, fun(W) -> 
 		W + ((D-Y) * 0.01 * X) end),
-	setPercWeight(Tn, {Tx, D}, Y).
+	setPercWeight(Tn, {Tx, D}, Y, linear);
+setPercWeight([Hn|Tn], {[X|Tx], D}, Y, WeightAlgorithm) ->
+	setWeight(Hn, fun(W) -> 
+		WeightAlgorithm(W,D,Y,X) end),
+	setPercWeight(Tn, {Tx, D}, Y, WeightAlgorithm).
 
 newPercNet(_, []) ->
 	[];
