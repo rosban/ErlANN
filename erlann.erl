@@ -446,7 +446,7 @@ newPercNet(N) ->
 	Neurons = new(N),
 	[First|_] = Neurons,
 	connect(First, self()),
-	setFunction(First, fun(Signal, Bias) -> fermiDist(Signal, Bias) end),
+	setFunction(First, fun(Signal, Bias) -> heavySide(Signal, Bias) end),
 	call([First], {setCounter, N-1}),
 	newPercNet(First, Neurons),
 	Neurons.
